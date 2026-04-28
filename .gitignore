@@ -4,3 +4,6 @@ backend/outputs/
 __pycache__/
 .env
 .DS_Store
+
+dist/
+frontend/dist/

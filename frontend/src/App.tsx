@@ -3,6 +3,7 @@ import { Headphones, Globe, BookOpen, Loader2 } from 'lucide-react'
 import { AudiobookPlayer } from './components/AudiobookPlayer'
 
 function App() {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   const [url, setUrl] = useState('')
   const [voice, setVoice] = useState('pt-BR-AntonioNeural')
   const [isLoading, setIsLoading] = useState(false)
@@ -20,7 +21,7 @@ function App() {
     setError('')
     
     try {
-      const response = await fetch('/api/generate', {
+      const response = await fetch(`${apiBaseUrl}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
