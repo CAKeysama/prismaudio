@@ -1,0 +1,50 @@
+{
+  "name": "prismaudio-hybrid",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PrismAudio desktop hybrid app",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "install:all": "npm install && npm --prefix frontend install",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "nodemon --watch backend --ext js --exec \"node backend/server.js\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "start": "node backend/server.js",
+    "start:local": "OPEN_BROWSER=true node backend/server.js",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "electron:build": "npm run build:frontend && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "open": "^10.1.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^36.2.1",
+    "electron-builder": "^26.0.12",
+    "nodemon": "^3.1.10"
+  },
+  "build": {
+    "appId": "com.prismaudio.desktop",
+    "productName": "PrismAudio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    }
+  }
+}
