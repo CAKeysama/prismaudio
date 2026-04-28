@@ -53,4 +53,10 @@
     }
   },
   "author": "PrismAudio"
+      ]
+    },
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    }
+  }
 }

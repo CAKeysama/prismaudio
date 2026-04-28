@@ -87,15 +87,3 @@ Após finalizar, os arquivos ficam em `dist/`.
 ## Logging
 
 Logs simples com timestamp no backend local (`INFO`, `WARN`, `ERROR`).
-
-## Troubleshooting (Windows)
-
-### Erro: `Cannot create symbolic link` ao baixar `winCodeSign`
-
-Se o `npm run electron:build` falhar com erro de symlink no cache `winCodeSign`, use build sem assinatura automática:
-
-```bash
-set CSC_IDENTITY_AUTO_DISCOVERY=false && npm run electron:build
-```
-
-Também é recomendado ativar o **Developer Mode** no Windows ou executar o terminal como **Administrador** para permitir criação de links simbólicos.
