@@ -5,8 +5,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const { spawn } = require('child_process');
-const open = require('open');
-
+// const open = require('open'); // Removed due to ESM constraint, will dynamically import
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 const OPEN_BROWSER = process.env.OPEN_BROWSER === 'true';
@@ -86,18 +85,35 @@ function startPythonBackend() {
   }
 
   const pythonCmd = process.env.PYTHON_CMD || 'python';
-  const pythonMainPath = path.resolve(__dirname, 'main.py');
+  let pythonMainPath = path.resolve(__dirname, 'main.py');
+  
+  if (pythonMainPath.includes('app.asar')) {
+    pythonMainPath = pythonMainPath.replace('app.asar', 'app.asar.unpacked');
+  }
 
   if (!fs.existsSync(pythonMainPath)) {
-    log('WARN', 'Arquivo main.py não encontrado. Ignore se API externa for usada.');
+    log('WARN', `Arquivo main.py não encontrado em ${pythonMainPath}. Ignore se API externa for usada.`);
     return;
   }
 
+  let cwdPath = __dirname;
+  if (cwdPath.includes('app.asar')) {
+    cwdPath = cwdPath.replace('app.asar', 'app.asar.unpacked');
+  }
+
   pythonProcess = spawn(pythonCmd, [pythonMainPath], {
-    cwd: __dirname,
-    stdio: 'ignore',
+    cwd: cwdPath,
+    stdio: 'pipe',
     windowsHide: true,
     detached: false,
+  });
+
+  pythonProcess.stdout.on('data', (data) => {
+    log('PYTHON_OUT', data.toString().trim());
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    log('PYTHON_ERR', data.toString().trim());
   });
 
   pythonProcess.on('exit', (code) => {
@@ -143,7 +159,8 @@ const server = app.listen(PORT, HOST, async () => {
   log('INFO', `Servidor local ativo em ${localUrl}`);
 
   if (OPEN_BROWSER) {
-    await open(localUrl);
+    const { default: openModule } = await import('open');
+    await openModule(localUrl);
     log('INFO', 'Navegador padrão aberto automaticamente.');
   }
 });

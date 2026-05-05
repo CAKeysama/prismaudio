@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import os
 import uuid
 
-from scraper import extract_text_from_url
+from scraper import extract_data_from_url
 from text_processor import clean_text
 from tts_engine import generate_audiobook
 
@@ -37,8 +37,14 @@ class GenerateRequest(BaseModel):
 @app.post("/api/generate")
 def generate(req: GenerateRequest):
     try:
+        title = ""
+        next_url = ""
+        
         if req.url:
-            raw_text = extract_text_from_url(req.url)
+            data = extract_data_from_url(req.url)
+            raw_text = data["text"]
+            title = data["title"]
+            next_url = data["next_url"]
         elif req.text:
             raw_text = req.text
         else:
@@ -63,6 +69,8 @@ def generate(req: GenerateRequest):
             "success": True,
             "audio_url": f"/audio/{filename}",
             "text": cleaned_text,
+            "title": title,
+            "next_url": next_url,
             "timestamps": timestamps
         }
         

@@ -1,24 +1,39 @@
-import { useState } from 'react'
-import { Headphones, Globe, BookOpen, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Headphones, Globe, BookOpen, Loader2, Library } from 'lucide-react'
 import { AudiobookPlayer } from './components/AudiobookPlayer'
+import { LibraryView } from './components/LibraryView'
+import { loadPlayerState, savePlayerState, clearPlayerState } from './utils/storageManager'
+import { addNovel } from './utils/libraryManager'
+import { getNextChapterUrl } from './utils/chapterNavigator'
 
 function App() {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
+  const [view, setView] = useState<'home' | 'player' | 'library'>('home')
   const [url, setUrl] = useState('')
   const [voice, setVoice] = useState('pt-BR-AntonioNeural')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  
   const [audiobookData, setAudiobookData] = useState<{
     audio_url: string;
     timestamps: any[];
+    title?: string;
+    next_url?: string;
   } | null>(null)
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!url) return
-    
-    setIsLoading(true)
-    setError('')
+  // Restaurar sessão ao abrir o app
+  useEffect(() => {
+    const saved = loadPlayerState();
+    if (saved && saved.audiobookData && saved.currentUrl) {
+      setUrl(saved.currentUrl);
+      setAudiobookData(saved.audiobookData);
+      setView('player');
+    }
+  }, []);
+
+  const fetchAudiobook = async (targetUrl: string) => {
+    setIsLoading(true);
+    setError('');
     
     try {
       const response = await fetch(`${apiBaseUrl}/api/generate`, {
@@ -26,26 +41,76 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ url, voice }),
-      })
+        body: JSON.stringify({ url: targetUrl, voice }),
+      });
       
-      const data = await response.json()
+      const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.detail || 'Ocorreu um erro ao processar a história.')
+        throw new Error(data.detail || 'Ocorreu um erro ao processar a história.');
       }
       
-      setAudiobookData({
+      const newAudiobookData = {
         audio_url: data.audio_url,
         timestamps: data.timestamps,
-      })
+        title: data.title,
+        next_url: data.next_url,
+      };
       
+      setAudiobookData(newAudiobookData);
+      setUrl(targetUrl);
+      
+      savePlayerState({ 
+        currentUrl: targetUrl, 
+        audiobookData: newAudiobookData 
+      });
+      
+      setView('player');
     } catch (err: any) {
-      setError(err.message)
+      setError(err.message);
+      // Se deu erro ao buscar o próximo via navegação automática, muda a view pra home
+      if (view === 'player') setView('home');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
+
+  const handleGenerate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url) return;
+    await fetchAudiobook(url);
+  };
+
+  const handleNextChapter = async (nextUrlBackend: string) => {
+    const targetUrl = nextUrlBackend || getNextChapterUrl(url);
+    if (targetUrl) {
+      await fetchAudiobook(targetUrl);
+    } else {
+      alert('Não foi possível determinar o próximo capítulo automaticamente.');
+    }
+  };
+
+  const handleAddToLibrary = () => {
+    if (audiobookData && url) {
+      addNovel({
+        name: audiobookData.title || 'Novel Desconhecida',
+        currentChapterUrl: url,
+      });
+      alert('Progresso salvo na biblioteca!');
+    }
+  };
+
+  const handleSelectFromLibrary = (selectedUrl: string) => {
+    setUrl(selectedUrl);
+    setView('home'); 
+    fetchAudiobook(selectedUrl);
+  };
+
+  const closePlayer = () => {
+    setAudiobookData(null);
+    clearPlayerState();
+    setView('home');
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-indigo-500/30">
@@ -53,15 +118,45 @@ function App() {
       {/* Navbar */}
       <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-white font-bold text-xl tracking-tight">
+          <div 
+            className="flex items-center gap-2 text-white font-bold text-xl tracking-tight cursor-pointer"
+            onClick={() => setView('home')}
+          >
             <Headphones className="text-indigo-500" />
             <span>Prism<span className="text-zinc-500 font-light">Audio</span></span>
           </div>
+          
+          <nav className="flex gap-4">
+            <button 
+              onClick={() => setView('library')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium ${view === 'library' ? 'bg-indigo-500/20 text-indigo-400' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
+            >
+              <Library size={18} />
+              Biblioteca
+            </button>
+            {audiobookData && view !== 'player' && (
+              <button 
+                onClick={() => setView('player')}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-900"
+              >
+                <BookOpen size={18} />
+                Lendo
+              </button>
+            )}
+          </nav>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-12">
-        {!audiobookData ? (
+        
+        {view === 'library' && (
+          <div>
+            <h1 className="text-3xl font-bold mb-8">Minha Biblioteca</h1>
+            <LibraryView onSelectNovel={handleSelectFromLibrary} />
+          </div>
+        )}
+
+        {view === 'home' && (
           <div className="max-w-2xl mx-auto mt-20">
             <div className="text-center mb-12">
               <h1 className="text-5xl font-extrabold tracking-tight mb-6 bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-transparent">
@@ -132,17 +227,24 @@ function App() {
               </div>
             </form>
           </div>
-        ) : (
+        )}
+
+        {view === 'player' && audiobookData && (
           <div className="h-[80vh]">
             <button 
-              onClick={() => setAudiobookData(null)}
+              onClick={closePlayer}
               className="mb-6 text-zinc-400 hover:text-white flex items-center gap-2 transition-colors text-sm font-medium"
             >
-              ← Voltar para gerar outro
+              ← Fechar leitura e voltar ao início
             </button>
             <AudiobookPlayer 
+              currentUrl={url}
               audioUrl={audiobookData.audio_url} 
-              timestamps={audiobookData.timestamps} 
+              timestamps={audiobookData.timestamps}
+              title={audiobookData.title}
+              nextUrl={audiobookData.next_url}
+              onNextChapter={handleNextChapter}
+              onAddToLibrary={handleAddToLibrary}
             />
           </div>
         )}

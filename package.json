@@ -38,6 +38,9 @@
       "electron/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "backend/**/*.py"
+    ],
     "win": {
       "target": [
         "nsis"
@@ -53,10 +56,4 @@
     }
   },
   "author": "PrismAudio"
-      ]
-    },
-    "extraMetadata": {
-      "main": "electron/main.cjs"
-    }
-  }
 }

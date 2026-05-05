@@ -41,9 +41,20 @@ function startBackend() {
       ...process.env,
       OPEN_BROWSER: 'false',
       NODE_ENV: 'production',
+      ELECTRON_RUN_AS_NODE: '1',
     },
-    stdio: 'ignore',
+    stdio: 'pipe',
     windowsHide: true,
+  });
+
+  const fs = require('fs');
+  const logStream = fs.createWriteStream(path.join(app.getPath('userData'), 'backend_error.log'), { flags: 'a' });
+  
+  backendProcess.stdout.pipe(logStream);
+  backendProcess.stderr.pipe(logStream);
+  
+  backendProcess.on('exit', (code) => {
+    logStream.write(`Backend exited with code ${code}\n`);
   });
 }
 

@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Play, Pause, Download, Volume2, FastForward, Rewind } from 'lucide-react';
+import { Play, Pause, Download, Volume2, FastForward, Rewind, SkipForward, LibraryBig } from 'lucide-react';
+import { useAudioController } from '../hooks/useAudioController';
+import { savePlayerState, loadPlayerState } from '../utils/storageManager';
 
 interface Timestamp {
   text: string;
@@ -8,20 +10,27 @@ interface Timestamp {
 }
 
 interface AudiobookPlayerProps {
+  currentUrl: string;
   audioUrl: string;
   timestamps: Timestamp[];
+  title?: string;
+  nextUrl?: string;
+  onNextChapter?: (url: string) => void;
+  onAddToLibrary?: () => void;
 }
 
-export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) {
+export function AudiobookPlayer({ currentUrl, audioUrl, timestamps, title, nextUrl, onNextChapter, onAddToLibrary }: AudiobookPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeWordIndex, setActiveWordIndex] = useState(-1);
+  const [hasRestoredTime, setHasRestoredTime] = useState(false);
+
+  const { volume, speed, handleVolumeChange, handleSpeedChange } = useAudioController(audioRef);
 
   useEffect(() => {
-    // Find the active text chunk based on current time
     const index = timestamps.findIndex((t, i) => {
       const nextStart = timestamps[i + 1]?.start || Infinity;
       return currentTime >= t.start && currentTime < nextStart;
@@ -30,14 +39,12 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
     if (index !== -1 && index !== activeWordIndex) {
       setActiveWordIndex(index);
       
-      // Optional: Auto-scroll to active word
       const activeElement = document.getElementById(`word-${index}`);
       if (activeElement && scrollRef.current) {
         const container = scrollRef.current;
         const offsetTop = activeElement.offsetTop;
         const containerHeight = container.clientHeight;
         
-        // Scroll only if the word is out of the center view
         if (offsetTop < container.scrollTop + 50 || offsetTop > container.scrollTop + containerHeight - 50) {
           container.scrollTo({
             top: offsetTop - containerHeight / 2,
@@ -47,6 +54,20 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
       }
     }
   }, [currentTime, timestamps, activeWordIndex]);
+
+  useEffect(() => {
+    if (duration > 0 && !hasRestoredTime) {
+      const saved = loadPlayerState();
+      // Restaurar apenas se a URL for a mesma para não restaurar posição de outro capítulo
+      if (saved && saved.currentTime && saved.currentUrl === currentUrl && saved.currentTime < duration) {
+        if (audioRef.current) {
+          audioRef.current.currentTime = saved.currentTime;
+          setCurrentTime(saved.currentTime);
+        }
+      }
+      setHasRestoredTime(true);
+    }
+  }, [duration, hasRestoredTime, currentUrl]);
 
   const togglePlay = () => {
     if (audioRef.current) {
@@ -61,7 +82,12 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
-      setCurrentTime(audioRef.current.currentTime);
+      const newTime = audioRef.current.currentTime;
+      setCurrentTime(newTime);
+      // Evita muitas escritas usando um throttling simples baseado em segundos inteiros
+      if (Math.abs(currentTime - newTime) > 1 || newTime === 0) {
+          savePlayerState({ currentTime: newTime, currentUrl });
+      }
     }
   };
 
@@ -82,11 +108,34 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
+      savePlayerState({ currentTime: time, currentUrl });
     }
   };
 
   return (
     <div className="flex flex-col h-full bg-zinc-900/50 rounded-2xl border border-zinc-800 backdrop-blur-sm overflow-hidden shadow-2xl">
+      {/* Cabeçalho do Capítulo */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950/80">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-lg font-bold text-white truncate" title={title || 'Capítulo Atual'}>
+            {title || 'Capítulo Desconhecido'}
+          </h2>
+          <p className="text-xs text-zinc-500 truncate mt-1" title={currentUrl}>
+            {currentUrl}
+          </p>
+        </div>
+        {onAddToLibrary && (
+          <button 
+            onClick={onAddToLibrary}
+            className="ml-4 p-2 text-zinc-400 hover:text-indigo-400 bg-zinc-900 rounded-lg border border-zinc-800 transition-colors flex items-center gap-2"
+            title="Adicionar à Biblioteca"
+          >
+            <LibraryBig size={18} />
+            <span className="text-sm font-medium hidden sm:inline">Salvar</span>
+          </button>
+        )}
+      </div>
+
       {/* Text Area (Karaoke) */}
       <div 
         ref={scrollRef}
@@ -123,7 +172,12 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
           src={audioUrl}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={() => {
+            setIsPlaying(false);
+            if (nextUrl && onNextChapter) {
+              onNextChapter(nextUrl);
+            }
+          }}
         />
         
         {/* Progress Bar */}
@@ -137,6 +191,7 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
             max={duration || 100}
             value={currentTime}
             onChange={handleSeek}
+            title="Progresso do capítulo"
             className="flex-1 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
           />
           <span className="text-xs font-mono text-zinc-500 w-10">
@@ -146,26 +201,38 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
 
         {/* Buttons */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button className="text-zinc-400 hover:text-white transition-colors">
+          
+          {/* Volume Control */}
+          <div className="flex items-center gap-2 group w-1/4">
+            <button className="text-zinc-400 hover:text-white transition-colors" title="Volume">
               <Volume2 size={20} />
             </button>
-            <div className="px-2 py-1 text-xs font-semibold bg-zinc-800 text-zinc-400 rounded">
-              1.0x
-            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => handleVolumeChange(Number(e.target.value))}
+              title="Ajustar Volume"
+              className="w-20 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-300 opacity-50 group-hover:opacity-100 transition-opacity"
+            />
           </div>
 
-          <div className="flex items-center gap-6">
+          {/* Main Controls */}
+          <div className="flex flex-1 justify-center items-center gap-6">
             <button 
               onClick={() => {
                 if (audioRef.current) audioRef.current.currentTime -= 10;
               }}
               className="text-zinc-400 hover:text-white transition-colors"
+              title="Retroceder 10 segundos"
             >
               <Rewind size={24} />
             </button>
             <button 
               onClick={togglePlay}
+              title={isPlaying ? "Pausar" : "Play"}
               className="flex items-center justify-center w-14 h-14 bg-white text-black rounded-full hover:bg-zinc-200 hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
             >
               {isPlaying ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" className="ml-1" />}
@@ -175,19 +242,47 @@ export function AudiobookPlayer({ audioUrl, timestamps }: AudiobookPlayerProps) 
                 if (audioRef.current) audioRef.current.currentTime += 10;
               }}
               className="text-zinc-400 hover:text-white transition-colors"
+              title="Avançar 10 segundos"
             >
               <FastForward size={24} />
             </button>
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Right Controls (Speed, Next, Download) */}
+          <div className="flex items-center justify-end gap-4 w-1/4">
+            <div className="flex items-center gap-2" title="Velocidade da voz">
+              <input
+                type="range"
+                min="0.5"
+                max="2"
+                step="0.25"
+                value={speed}
+                onChange={(e) => handleSpeedChange(Number(e.target.value))}
+                className="w-16 h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-zinc-300 hidden sm:block"
+              />
+              <div className="px-2 py-1 text-xs font-semibold bg-zinc-800 text-zinc-400 rounded w-12 text-center">
+                {speed.toFixed(2)}x
+              </div>
+            </div>
+
+            {onNextChapter && (
+              <button 
+                onClick={() => onNextChapter(nextUrl || '')}
+                disabled={!nextUrl && !onNextChapter} // Habilita pelo fallback do pai se necessário
+                className="text-zinc-400 hover:text-white transition-colors disabled:opacity-30"
+                title="Próximo capítulo"
+              >
+                <SkipForward size={20} />
+              </button>
+            )}
+
             <a 
               href={audioUrl} 
               download
-              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-sm font-medium rounded-lg transition-colors text-zinc-200"
+              title="Baixar áudio (MP3)"
+              className="text-zinc-400 hover:text-white transition-colors"
             >
-              <Download size={16} />
-              <span>Download</span>
+              <Download size={20} />
             </a>
           </div>
         </div>
